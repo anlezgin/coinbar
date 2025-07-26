@@ -1,12 +1,10 @@
-// CoinGecko API Base URL
+// === CoinGecko API ===
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
-
-// Global variables
 let allCoins = [];
 let filteredCoins = [];
 let currentFilter = 'all';
 
-// DOM Elements
+// === DOM Elements ===
 const coinList = document.getElementById('coinList');
 const searchInput = document.getElementById('searchInput');
 const loading = document.getElementById('loading');
@@ -16,40 +14,25 @@ const closeModal = document.querySelector('.close');
 const filterButtons = document.querySelectorAll('.filter-btn');
 const signalsContainer = document.getElementById('signalsContainer');
 
-// Market stats elements
-const totalMarketCap = document.getElementById('totalMarketCap');
-const totalVolume = document.getElementById('totalVolume');
-const btcDominance = document.getElementById('btcDominance');
-
-// Initialize app
+// === Init App ===
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
     setupEventListeners();
 });
 
-// Initialize the application
 async function initializeApp() {
     showLoading();
     try {
-        await Promise.all([
-            loadMarketData(),
-            loadCoins(),
-            generateSignals()
-        ]);
+        await Promise.all([loadMarketData(), loadCoins(), generateSignals()]);
     } catch (error) {
-        console.error('Uygulama başlatılırken hata:', error);
-        showError('Veriler yüklenirken bir hata oluştu. Lütfen sayfayı yenileyin.');
+        console.error('Başlatma hatası:', error);
     } finally {
         hideLoading();
     }
 }
 
-// Setup event listeners
 function setupEventListeners() {
-    // Search functionality
     searchInput.addEventListener('input', handleSearch);
-    
-    // Filter buttons
     filterButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             filterButtons.forEach(b => b.classList.remove('active'));
@@ -58,1413 +41,669 @@ function setupEventListeners() {
             filterCoins();
         });
     });
-    
-    // Modal functionality
-    closeModal.addEventListener('click', () => {
-        modal.style.display = 'none';
-    });
-    
-    window.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
+    closeModal.addEventListener('click', () => modal.style.display = 'none');
+    window.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
 }
 
-// Load market overview data
+// === Market Data ===
 async function loadMarketData() {
     try {
         const response = await fetch(`${COINGECKO_API}/global`);
         const data = await response.json();
-        
         const marketData = data.data;
-        
-        // Format market cap
-        const marketCap = formatCurrency(marketData.total_market_cap.usd);
-        totalMarketCap.textContent = marketCap;
-        
-        // Format volume
-        const volume = formatCurrency(marketData.total_volume.usd);
-        totalVolume.textContent = volume;
-        
-        // Calculate BTC dominance
-        const btcMarketCap = marketData.market_cap_percentage.btc;
-        btcDominance.textContent = `${btcMarketCap.toFixed(1)}%`;
-        
-    } catch (error) {
-        console.error('Piyasa verileri yüklenirken hata:', error);
-    }
+        document.getElementById('totalMarketCap').textContent = formatCurrency(marketData.total_market_cap.usd);
+        document.getElementById('totalVolume').textContent = formatCurrency(marketData.total_volume.usd);
+        document.getElementById('btcDominance').textContent = `${marketData.market_cap_percentage.btc.toFixed(1)}%`;
+    } catch (e) { console.error(e); }
 }
 
-// Load coins data
 async function loadCoins() {
     try {
-        // TRY cinsinden coin verilerini çek
-        const response = await fetch(`${COINGECKO_API}/coins/markets?vs_currency=try&order=market_cap_desc&per_page=100&page=1&sparkline=true&locale=tr`);
-        const coins = await response.json();
-        
-
-        
-        allCoins = coins;
-        filteredCoins = [...coins];
-        
+        const response = await fetch(`${COINGECKO_API}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=true`);
+        allCoins = await response.json();
+        filteredCoins = [...allCoins];
         renderCoins();
-        
-    } catch (error) {
-        console.error('Coin verileri yüklenirken hata:', error);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// Render coins list
 function renderCoins() {
     coinList.innerHTML = '';
-    
-    filteredCoins.forEach(coin => {
-        const coinCard = createCoinCard(coin);
-        coinList.appendChild(coinCard);
-    });
+    filteredCoins.forEach(coin => coinList.appendChild(createCoinCard(coin)));
 }
 
-// Create coin card element
 function createCoinCard(coin) {
     const card = document.createElement('div');
     card.className = 'coin-card';
-    
-    // Güçlü alım sinyali varsa özel stil ekle
     const signal = generateSignalForCoin(coin);
-    if (signal.type === 'buy' && signal.confidencePercent >= 60) {
+
+    if (signal.type === 'buy' && signal.confidencePercent >= 70) {
         card.style.border = '2px solid #00ff00';
-        card.style.boxShadow = '0 0 15px rgba(0, 255, 0, 0.3)';
-        card.style.background = 'linear-gradient(135deg, rgba(0,255,0,0.1) 0%, rgba(0,255,0,0.05) 100%)';
+        card.style.boxShadow = '0 0 15px rgba(0,255,0,0.3)';
     }
-    
+
     card.addEventListener('click', () => showCoinDetail(coin));
-    
+
     const priceChange = coin.price_change_percentage_24h;
     const changeClass = priceChange >= 0 ? 'positive' : 'negative';
     const changeIcon = priceChange >= 0 ? '↗' : '↘';
-    
-    // Teknik analiz verilerini al
-    const technical = getTechnicalAnalysis(coin);
-    let technicalIndicator = '';
-    
-    if (technical && technical.rsi) {
-        if (technical.rsi < 30) {
-            technicalIndicator = '<span style="color: #00ff00; font-size: 0.8rem;">RSI: Aşırı Satım</span>';
-        } else if (technical.rsi > 70) {
-            technicalIndicator = '<span style="color: #ff4444; font-size: 0.8rem;">RSI: Aşırı Alım</span>';
-        }
-    }
-    
+
     card.innerHTML = `
         <div class="coin-info">
             <img src="${coin.image}" alt="${coin.name}" class="coin-icon">
             <div>
                 <div class="coin-name">${coin.name}</div>
                 <div class="coin-symbol">${coin.symbol.toUpperCase()}</div>
-                ${technicalIndicator}
             </div>
         </div>
-        <div class="price">₺${formatPrice(coin.current_price)}</div>
-        <div class="change ${changeClass}">
-            ${changeIcon} ${Math.abs(priceChange).toFixed(2)}%
-        </div>
-        <div class="market-cap">$${formatMarketCap(coin.market_cap)}</div>
-        <div class="volume">$${formatVolume(coin.total_volume)}</div>
+        <div class="price">$${formatPrice(coin.current_price)}</div>
+        <div class="change ${changeClass}">${changeIcon} ${Math.abs(priceChange).toFixed(2)}%</div>
     `;
-    
     return card;
 }
 
-// Debouncing için değişken
-let lastClickTime = 0;
-const CLICK_DELAY = 1000; // 1 saniye
-
-// Show coin detail modal
-async function showCoinDetail(coin) {
-    // Debouncing kontrolü
-    const now = Date.now();
-    if (now - lastClickTime < CLICK_DELAY) {
-        console.log('Çok hızlı tıklama, bekleniyor...');
-        return;
-    }
-    lastClickTime = now;
-    
-    try {
-        const response = await fetch(`${COINGECKO_API}/coins/${coin.id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false&vs_currency=try`);
-        const detail = await response.json();
-        
-        const signal = generateSignalForCoin(detail);
-        
-        // Teknik analiz verilerini al
-        const technical = getTechnicalAnalysis(coin);
-        
-        let technicalHtml = '';
-        if (technical) {
-            technicalHtml = `
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                    <h3 style="margin: 0 0 12px 0; font-size: 1.2rem;">Teknik Analiz</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
-                        ${technical.rsi ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">RSI (14)</h4>
-                                <p style="color: ${technical.rsi > 70 ? '#ff4444' : technical.rsi < 30 ? '#00ff00' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 1rem;">
-                                    ${technical.rsi.toFixed(1)}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    0-30: Aşırı satım (Alım fırsatı) 🟢<br>
-                                    30-70: Nötr bölge 🟡<br>
-                                    70-100: Aşırı alım (Satış fırsatı) 🔴
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.ma7 && technical.ma14 ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">MA Trend</h4>
-                                <p style="color: ${technical.ma7 > technical.ma14 ? '#00ff00' : '#ff4444'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.ma7 > technical.ma14 ? 'Alım sinyali, fiyat yukarı yönlü' : 'Satış sinyali, fiyat aşağı yönlü'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    MA7: ₺${formatPrice(technical.ma7)} | MA14: ₺${formatPrice(technical.ma14)}
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.macd ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">MACD</h4>
-                                <p style="color: ${technical.macd.histogram > 0 ? '#00ff00' : '#ff4444'}; font-weight: bold; margin: 0; font-size: 1rem;">
-                                    ${technical.macd.histogram > 0 ? 'Pozitif' : 'Negatif'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    Histogram: ${technical.macd.histogram.toFixed(6)}
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.supportResistance ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">Destek/Direnç</h4>
-                                <p style="color: #ffd700; font-weight: bold; margin: 2px 0; font-size: 0.9rem;">
-                                    Destek: ₺${technical.supportResistance.support ? formatPrice(technical.supportResistance.support) : 'N/A'}
-                                </p>
-                                <p style="color: #ffd700; font-weight: bold; margin: 2px 0; font-size: 0.9rem;">
-                                    Direnç: ₺${technical.supportResistance.resistance ? formatPrice(technical.supportResistance.resistance) : 'N/A'}
-                                </p>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.bollingerBands ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">Bollinger Bands</h4>
-                                <p style="color: ${technical.bollingerBands.position === 'upper' ? '#ff4444' : technical.bollingerBands.position === 'lower' ? '#00ff00' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.bollingerBands.position === 'upper' ? 'Üst Bantta: Satış fırsatı' : technical.bollingerBands.position === 'lower' ? 'Alt Bantta: Alım fırsatı' : 'Orta Bantta: Nötr durum'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    Volatilite: ${technical.bollingerBands.bandwidth.toFixed(1)}%
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.williamsR ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">Williams %R</h4>
-                                <p style="color: ${technical.williamsR.signal === 'oversold' ? '#00ff00' : technical.williamsR.signal === 'overbought' ? '#ff4444' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.williamsR.value.toFixed(1)} - ${technical.williamsR.signal === 'oversold' ? 'Aşırı satım' : technical.williamsR.signal === 'overbought' ? 'Aşırı alım' : 'Nötr'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    -80 altı: Aşırı satım (Alım fırsatı) 🟢<br>
-                                    -20 üstü: Aşırı alım (Satış fırsatı) 🔴<br>
-                                    -80 ile -20 arası: Nötr bölge 🟡
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.obv ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">OBV Trend</h4>
-                                <p style="color: ${technical.obv.trend === 'bullish' ? '#00ff00' : technical.obv.trend === 'bearish' ? '#ff4444' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.obv.trend === 'bullish' ? 'Yükseliş' : technical.obv.trend === 'bearish' ? 'Düşüş' : 'Nötr'} Trendi
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    Güç: %${technical.obv.strength.toFixed(1)}
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.atr ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">ATR Volatilite</h4>
-                                <p style="color: ${technical.atr.level === 'high' ? '#ff4444' : technical.atr.level === 'low' ? '#00ff00' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.atr.level === 'high' ? 'Yüksek Volatilite' : technical.atr.level === 'low' ? 'Düşük Volatilite' : 'Normal Volatilite'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    Değer: ₺${formatPrice(technical.atr.value)} (%${technical.atr.percentage.toFixed(1)})
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.stochastic ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">Stochastic</h4>
-                                <p style="color: ${technical.stochastic.signal === 'oversold' ? '#00ff00' : technical.stochastic.signal === 'overbought' ? '#ff4444' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    %K: ${technical.stochastic.k.toFixed(1)} | %D: ${technical.stochastic.d.toFixed(1)}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    🟢 %K & %D < 20: Aşırı satım (Alım fırsatı)<br>
-                                    🔴 %K & %D > 80: Aşırı alım (Satış fırsatı)<br>
-                                    🟡 20-80 arası: Nötr bölge (Bekle)
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.vwap ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">VWAP</h4>
-                                <p style="color: ${technical.vwap.position === 'above' ? '#00ff00' : technical.vwap.position === 'below' ? '#ff4444' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.vwap.position === 'above' ? 'VWAP Üstünde' : technical.vwap.position === 'below' ? 'VWAP Altında' : 'VWAP Seviyesinde'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    Fark: %${technical.vwap.difference.toFixed(2)} | VWAP: ₺${formatPrice(technical.vwap.value)}
-                                </small>
-                            </div>
-                        ` : ''}
-                        
-                        ${technical.cci ? `
-                            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;">
-                                <h4 style="margin: 0 0 4px 0; font-size: 0.85rem;">CCI Trend</h4>
-                                <p style="color: ${technical.cci.signal === 'oversold' ? '#00ff00' : technical.cci.signal === 'overbought' ? '#ff4444' : '#ffd700'}; font-weight: bold; margin: 0; font-size: 0.9rem;">
-                                    ${technical.cci.value.toFixed(1)} - ${technical.cci.signal === 'oversold' ? 'Aşırı satım' : technical.cci.signal === 'overbought' ? 'Aşırı alım' : 'Nötr'}
-                                </p>
-                                <small style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">
-                                    🔴 +100 üstü: Aşırı alım (Satış fırsatı)<br>
-                                    🟢 -100 altı: Aşırı satım (Alım fırsatı)<br>
-                                    🟡 -100 ile +100 arası: Nötr (Bekle)
-                                </small>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        }
-        
-        coinDetail.innerHTML = `
-            <div style="text-align: center; margin-bottom: 15px;">
-                <img src="${coin.image}" alt="${coin.name}" style="width: 60px; height: 60px; border-radius: 50%; margin-bottom: 8px;">
-                <h2 style="margin: 5px 0; font-size: 1.5rem;">${coin.name} (${coin.symbol.toUpperCase()})</h2>
-                <p style="font-size: 1.3rem; color: #ffd700; margin: 5px 0;">₺${formatPrice(coin.current_price)}</p>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px;">
-                <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 5px 0; font-size: 0.9rem;">24s Değişim</h4>
-                    <p style="color: ${coin.price_change_percentage_24h >= 0 ? '#00ff00' : '#ff4444'}; font-weight: bold; margin: 0; font-size: 1rem;">
-                        ${coin.price_change_percentage_24h >= 0 ? '+' : ''}${coin.price_change_percentage_24h.toFixed(2)}%
-                    </p>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 5px 0; font-size: 0.9rem;">Piyasa Değeri</h4>
-                    <p style="margin: 0; font-size: 1rem;">${formatMarketCap(coin.market_cap)}</p>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 5px 0; font-size: 0.9rem;">24s Hacim</h4>
-                    <p style="margin: 0; font-size: 1rem;">${formatVolume(coin.total_volume)}</p>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 5px 0; font-size: 0.9rem;">Dolaşımdaki Arz</h4>
-                    <p style="margin: 0; font-size: 1rem;">${formatNumber(coin.circulating_supply)} ${coin.symbol.toUpperCase()}</p>
-                </div>
-            </div>
-            
-            ${technicalHtml}
-            
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                <h3 style="margin: 0 0 10px 0; font-size: 1.2rem;">Grafik Analizi</h3>
-                <div id="tradingview-widget" style="height: 300px; width: 100%; border-radius: 8px; overflow: hidden;">
-                    <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.7);">
-                        Grafik yükleniyor...
-                    </div>
-                </div>
-            </div>
-            
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
-                <h3 style="margin: 0 0 10px 0; font-size: 1.2rem;">Al-Sat Sinyali</h3>
-                <div style="display: flex; align-items: center; gap: 10px; margin: 8px 0;">
-                    <span class="signal-type ${signal.type}" style="margin: 0;">${signal.type === 'buy' ? 'AL' : signal.type === 'sell' ? 'SAT' : 'BEKLE'}</span>
-                    <span style="font-weight: bold;">${signal.reason}</span>
-                </div>
-                <p style="color: rgba(255,255,255,0.8); margin: 8px 0; font-size: 0.9rem;">${signal.description}</p>
-                <p style="color: #ffd700; margin: 5px 0; font-weight: 600;">Güven Skoru: ${Math.round(signal.confidence * 100)}%</p>
-            </div>
-        `;
-        
-        modal.style.display = 'block';
-        
-        // TradingView widget'ını yükle (gecikmeli)
-        setTimeout(() => {
-            loadTradingViewChart(coin.symbol.toUpperCase());
-        }, 500);
-        
-    } catch (error) {
-        console.error('Coin detayları yüklenirken hata:', error);
-        
-        // Rate limit hatası kontrolü
-        if (error.message.includes('429') || error.message.includes('rate limit')) {
-            showError('API sınırı aşıldı. Lütfen 1-2 dakika bekleyin.');
-        } else {
-            showError('Coin detayları yüklenemedi. Lütfen tekrar deneyin.');
-        }
-        
-        // Modal'ı kapat
-        const modal = document.getElementById('coinModal');
-        modal.style.display = 'none';
-    }
-}
-
-// Handle search
-function handleSearch() {
-    const searchTerm = searchInput.value.toLowerCase();
-    
-    filteredCoins = allCoins.filter(coin => 
-        coin.name.toLowerCase().includes(searchTerm) ||
-        coin.symbol.toLowerCase().includes(searchTerm)
-    );
-    
-    filterCoins();
-}
-
-// Filter coins based on current filter
-function filterCoins() {
-    let filtered = [...filteredCoins];
-    
-    switch (currentFilter) {
-        case 'gainers':
-            filtered = filtered.filter(coin => coin.price_change_percentage_24h > 0);
-            break;
-        case 'losers':
-            filtered = filtered.filter(coin => coin.price_change_percentage_24h < 0);
-            break;
-        case 'strong-buy':
-            filtered = filtered.filter(coin => {
-                const technical = getTechnicalAnalysis(coin);
-                const signal = generateSignalForCoin(coin);
-                
-                // Tüm göstergelerin olumlu olup olmadığını kontrol et
-                let positiveIndicators = 0;
-                let totalIndicators = 0;
-                
-                // RSI kontrolü - Aşırı satım veya nötr bölge
-                if (technical.rsi) {
-                    totalIndicators++;
-                    if (technical.rsi < 30 || (technical.rsi >= 30 && technical.rsi <= 70)) positiveIndicators++;
-                }
-                
-                // MA Trend kontrolü - Yükseliş trendi
-                if (technical.ma7 && technical.ma14) {
-                    totalIndicators++;
-                    if (technical.ma7 > technical.ma14) positiveIndicators++;
-                }
-                
-                // MACD kontrolü - Pozitif momentum
-                if (technical.macd) {
-                    totalIndicators++;
-                    if (technical.macd.histogram > 0) positiveIndicators++;
-                }
-                
-                // Bollinger Bands kontrolü - Alt veya orta bant
-                if (technical.bollingerBands) {
-                    totalIndicators++;
-                    if (technical.bollingerBands.position === 'lower' || technical.bollingerBands.position === 'middle') positiveIndicators++;
-                }
-                
-                // Williams %R kontrolü - Aşırı satım veya nötr
-                if (technical.williamsR) {
-                    totalIndicators++;
-                    if (technical.williamsR.signal === 'oversold' || technical.williamsR.signal === 'neutral') positiveIndicators++;
-                }
-                
-                // OBV kontrolü - Yükseliş trendi
-                if (technical.obv) {
-                    totalIndicators++;
-                    if (technical.obv.trend === 'bullish') positiveIndicators++;
-                }
-                
-                // ATR kontrolü - Normal veya düşük volatilite
-                if (technical.atr) {
-                    totalIndicators++;
-                    if (technical.atr.level === 'normal' || technical.atr.level === 'low') positiveIndicators++;
-                }
-                
-                // Stochastic kontrolü - Aşırı satım veya nötr
-                if (technical.stochastic) {
-                    totalIndicators++;
-                    if (technical.stochastic.signal === 'oversold' || technical.stochastic.signal === 'neutral') positiveIndicators++;
-                }
-                
-                // VWAP kontrolü - Üstünde veya seviyesinde
-                if (technical.vwap) {
-                    totalIndicators++;
-                    if (technical.vwap.position === 'above' || technical.vwap.position === 'neutral') positiveIndicators++;
-                }
-                
-                // CCI kontrolü - Aşırı satım veya nötr
-                if (technical.cci) {
-                    totalIndicators++;
-                    if (technical.cci.signal === 'oversold' || technical.cci.signal === 'neutral') positiveIndicators++;
-                }
-                
-                // 24s fiyat değişimi kontrolü - Pozitif
-                totalIndicators++;
-                if (coin.price_change_percentage_24h > 0) positiveIndicators++;
-                
-                // Hacim kontrolü - Normal veya yüksek hacim
-                const volumeToMarketCap = coin.total_volume / coin.market_cap;
-                totalIndicators++;
-                if (volumeToMarketCap >= 0.01) positiveIndicators++;
-                
-                // En az %75 göstergenin olumlu olması ve güven skoru %60+ olması
-                const positiveRatio = totalIndicators > 0 ? positiveIndicators / totalIndicators : 0;
-                return signal.type === 'buy' && signal.confidencePercent >= 60 && positiveRatio >= 0.75;
-            });
-            break;
-        case 'all':
-        default:
-            break;
-    }
-    
-    renderFilteredCoins(filtered);
-}
-
-// Render filtered coins
-function renderFilteredCoins(coins) {
-    coinList.innerHTML = '';
-    
-    if (coins.length === 0) {
-        coinList.innerHTML = '<div style="text-align: center; padding: 40px; color: rgba(255,255,255,0.7);">Sonuç bulunamadı</div>';
-        return;
-    }
-    
-    coins.forEach(coin => {
-        const coinCard = createCoinCard(coin);
-        coinList.appendChild(coinCard);
-    });
-}
-
-// Generate trading signals
-async function generateSignals() {
-    try {
-        // Get top coins for analysis
-        const topCoins = allCoins.slice(0, 20);
-        const signals = [];
-        
-        topCoins.forEach(coin => {
-            const signal = generateSignalForCoin(coin);
-            // Daha düşük confidence eşiği - daha fazla sinyal göster
-            if (signal.confidence > 0.4) {
-                signals.push({
-                    coin: coin,
-                    signal: signal
-                });
-            }
-        });
-        
-        // Sort by confidence and take top 6
-        signals.sort((a, b) => b.signal.confidence - a.signal.confidence);
-        const topSignals = signals.slice(0, 6);
-        
-        renderSignals(topSignals);
-        
-    } catch (error) {
-        console.error('Sinyaller oluşturulurken hata:', error);
-    }
-}
-
-// Generate signal for a specific coin
-function generateSignalForCoin(coin) {
-    const priceChange24h = coin.price_change_percentage_24h;
-    const marketCap = coin.market_cap;
-    const volume = coin.total_volume;
-    const volumeToMarketCap = volume / marketCap;
-    
-    // Teknik analiz verilerini al
-    const technical = getTechnicalAnalysis(coin);
-    
-    // Yeni hesaplama sistemi
-    let signal = {
-        type: 'hold',
-        reason: 'Bekle',
-        description: 'Fiyat stabil, bekle ve izle',
-        confidence: 0.1
-    };
-    
-    let technicalSignals = [];
-    let buyPoints = 0;
-    let sellPoints = 0;
-    let totalPoints = 0;
-    let maxPossiblePoints = 0;
-    
-    // Fiyat analizi - puan sistemi
-    maxPossiblePoints += 20; // Fiyat analizi maksimum 20 puan
-    
-    if (priceChange24h > 15) {
-        signal.type = 'buy';
-        signal.reason = 'Çok Güçlü Yükseliş';
-        buyPoints += 20;
-        technicalSignals.push(`24s: +${priceChange24h.toFixed(1)}% (Çok güçlü)`);
-    } else if (priceChange24h > 8) {
-        signal.type = 'buy';
-        signal.reason = 'Güçlü Yükseliş';
-        buyPoints += 15;
-        technicalSignals.push(`24s: +${priceChange24h.toFixed(1)}% (Güçlü)`);
-    } else if (priceChange24h > 3) {
-        signal.type = 'buy';
-        signal.reason = 'Pozitif Momentum';
-        buyPoints += 10;
-        technicalSignals.push(`24s: +${priceChange24h.toFixed(1)}% (Pozitif)`);
-    } else if (priceChange24h > 0) {
-        signal.type = 'buy';
-        signal.reason = 'Hafif Yükseliş';
-        buyPoints += 5;
-        technicalSignals.push(`24s: +${priceChange24h.toFixed(1)}% (Hafif)`);
-    } else if (priceChange24h < -15) {
-        signal.type = 'sell';
-        signal.reason = 'Çok Güçlü Düşüş';
-        sellPoints += 20;
-        technicalSignals.push(`24s: ${priceChange24h.toFixed(1)}% (Çok güçlü)`);
-    } else if (priceChange24h < -8) {
-        signal.type = 'sell';
-        signal.reason = 'Güçlü Düşüş';
-        sellPoints += 15;
-        technicalSignals.push(`24s: ${priceChange24h.toFixed(1)}% (Güçlü)`);
-    } else if (priceChange24h < -3) {
-        signal.type = 'sell';
-        signal.reason = 'Negatif Momentum';
-        sellPoints += 10;
-        technicalSignals.push(`24s: ${priceChange24h.toFixed(1)}% (Negatif)`);
-    } else if (priceChange24h < 0) {
-        signal.type = 'sell';
-        signal.reason = 'Hafif Düşüş';
-        sellPoints += 5;
-        technicalSignals.push(`24s: ${priceChange24h.toFixed(1)}% (Hafif)`);
-    }
-    
-    totalPoints += Math.max(buyPoints, sellPoints);
-    
-    // Teknik analiz göstergeleri
-    if (technical) {
-        // RSI analizi - puan sistemi
-        if (technical.rsi) {
-            maxPossiblePoints += 15; // RSI maksimum 15 puan
-            const rsiValue = technical.rsi;
-            if (rsiValue < 20) {
-                signal.type = 'buy';
-                signal.reason = 'Çok Aşırı Satım (RSI)';
-                buyPoints += 15;
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)} (Çok aşırı satım)`);
-            } else if (rsiValue < 30) {
-                signal.type = 'buy';
-                signal.reason = 'Aşırı Satım (RSI)';
-                buyPoints += 12;
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)} (Aşırı satım)`);
-            } else if (rsiValue > 80) {
-                signal.type = 'sell';
-                signal.reason = 'Çok Aşırı Alım (RSI)';
-                sellPoints += 15;
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)} (Çok aşırı alım)`);
-            } else if (rsiValue > 70) {
-                signal.type = 'sell';
-                signal.reason = 'Aşırı Alım (RSI)';
-                sellPoints += 12;
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)} (Aşırı alım)`);
-            } else if (rsiValue >= 30 && rsiValue <= 70) {
-                buyPoints += 3; // Nötr bölge için küçük bonus
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)} (Nötr)`);
-            } else {
-                technicalSignals.push(`RSI: ${rsiValue.toFixed(1)}`);
-            }
-            totalPoints += Math.max(buyPoints, sellPoints);
-        }
-        
-        // MA analizi - puan sistemi
-        if (technical.ma7 && technical.ma14 && technical.ma30) {
-            maxPossiblePoints += 15; // MA maksimum 15 puan
-            const currentPrice = technical.currentPrice;
-            const ma7 = technical.ma7;
-            const ma14 = technical.ma14;
-            const ma30 = technical.ma30;
-            
-            // Güçlü yükseliş trendi
-            if (currentPrice > ma7 && ma7 > ma14 && ma14 > ma30) {
-                signal.type = 'buy';
-                buyPoints += 15;
-                technicalSignals.push('MA: Güçlü yükseliş trendi (Alım)');
-            }
-            // Güçlü düşüş trendi
-            else if (currentPrice < ma7 && ma7 < ma14 && ma14 < ma30) {
-                signal.type = 'sell';
-                sellPoints += 15;
-                technicalSignals.push('MA: Güçlü düşüş trendi (Satış)');
-            }
-            // Hafif yükseliş
-            else if (currentPrice > ma7 && ma7 > ma14) {
-                if (signal.type === 'hold') signal.type = 'buy';
-                buyPoints += 10;
-                technicalSignals.push('MA: Hafif yükseliş trendi');
-            }
-            // Hafif düşüş
-            else if (currentPrice < ma7 && ma7 < ma14) {
-                if (signal.type === 'hold') signal.type = 'sell';
-                sellPoints += 10;
-                technicalSignals.push('MA: Hafif düşüş trendi');
-            }
-            totalPoints += Math.max(buyPoints, sellPoints);
-        }
-        
-        // MACD analizi - dinamik
-        if (technical.macd) {
-            const { histogram, macd, signal: macdSignal } = technical.macd;
-            
-            // Güçlü pozitif momentum
-            if (histogram > 0 && macd > macdSignal && histogram > 0.001) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push('MACD: Güçlü pozitif momentum (Alım)');
-            }
-            // Güçlü negatif momentum
-            else if (histogram < 0 && macd < macdSignal && histogram < -0.001) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push('MACD: Güçlü negatif momentum (Satış)');
-            }
-            // Hafif pozitif momentum
-            else if (histogram > 0 && macd > macdSignal) {
-                confidence += 0.1;
-                positiveSignals++;
-                technicalSignals.push('MACD: Hafif pozitif momentum');
-            }
-            // Hafif negatif momentum
-            else if (histogram < 0 && macd < macdSignal) {
-                confidence += 0.1;
-                negativeSignals++;
-                technicalSignals.push('MACD: Hafif negatif momentum');
-            }
-            totalSignals++;
-        }
-        
-        // Destek/Direnç analizi
-        if (technical.supportResistance && technical.supportResistance.support && technical.supportResistance.resistance) {
-            const { support, resistance, distanceToSupport, distanceToResistance } = technical.supportResistance;
-            if (distanceToSupport < 5) {
-                confidence += 0.1;
-                technicalSignals.push(`Destek yakın: ₺${formatPrice(support)}`);
-            } else if (distanceToResistance < 5) {
-                confidence += 0.1;
-                technicalSignals.push(`Direnç yakın: ₺${formatPrice(resistance)}`);
-            }
-        }
-        
-        // Bollinger Bands analizi - dinamik
-        if (technical.bollingerBands) {
-            const { position, bandwidth } = technical.bollingerBands;
-            
-            // Pozisyon analizi
-            if (position === 'upper') {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push('BB: Üst bantta - Satış fırsatı');
-            } else if (position === 'lower') {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push('BB: Alt bantta - Alım fırsatı');
-            } else {
-                confidence += 0.02; // Nötr bölge için çok küçük bonus
-                technicalSignals.push('BB: Orta bantta - Nötr');
-            }
-            
-            // Volatilite analizi
-            if (bandwidth > 15) {
-                confidence += 0.1;
-                technicalSignals.push('BB: Çok yüksek volatilite');
-            } else if (bandwidth > 10) {
-                technicalSignals.push('BB: Yüksek volatilite');
-            } else if (bandwidth < 3) {
-                confidence += 0.1;
-                technicalSignals.push('BB: Düşük volatilite - Sıkışma (Kırılma beklenir)');
-            } else if (bandwidth < 5) {
-                technicalSignals.push('BB: Düşük volatilite');
-            }
-            totalSignals++;
-        }
-        
-        // Williams %R analizi - dinamik
-        if (technical.williamsR) {
-            const { value, signal } = technical.williamsR;
-            if (signal === 'oversold') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push(`Williams %R: ${value.toFixed(1)} - Aşırı satım (Alım)`);
-            } else if (signal === 'overbought') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push(`Williams %R: ${value.toFixed(1)} - Aşırı alım (Satış)`);
-            } else {
-                confidence += 0.02; // Nötr bölge için çok küçük bonus
-                technicalSignals.push(`Williams %R: ${value.toFixed(1)} - Nötr`);
-            }
-            totalSignals++;
-        }
-        
-        // OBV analizi - dinamik
-        if (technical.obv) {
-            const { trend, strength } = technical.obv;
-            if (trend === 'bullish' && strength > 8) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push(`OBV: Çok güçlü yükseliş trendi (%${strength.toFixed(1)})`);
-            } else if (trend === 'bearish' && strength > 8) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push(`OBV: Çok güçlü düşüş trendi (%${strength.toFixed(1)})`);
-            } else if (trend === 'bullish' && strength > 5) {
-                confidence += 0.1;
-                positiveSignals++;
-                technicalSignals.push(`OBV: Güçlü yükseliş trendi (%${strength.toFixed(1)})`);
-            } else if (trend === 'bearish' && strength > 5) {
-                confidence += 0.1;
-                negativeSignals++;
-                technicalSignals.push(`OBV: Güçlü düşüş trendi (%${strength.toFixed(1)})`);
-            } else {
-                technicalSignals.push(`OBV: ${trend === 'bullish' ? 'Hafif yükseliş' : trend === 'bearish' ? 'Hafif düşüş' : 'Nötr'} trendi`);
-            }
-            totalSignals++;
-        }
-        
-        // ATR analizi - dinamik
-        if (technical.atr) {
-            const { level, percentage } = technical.atr;
-            if (level === 'high') {
-                confidence += 0.1;
-                technicalSignals.push(`ATR: Yüksek volatilite (%${percentage.toFixed(1)}) - Dikkatli ol`);
-            } else if (level === 'low') {
-                confidence += 0.05;
-                technicalSignals.push(`ATR: Düşük volatilite (%${percentage.toFixed(1)}) - Sıkışma`);
-            } else {
-                confidence += 0.02; // Normal volatilite için küçük bonus
-                technicalSignals.push(`ATR: Normal volatilite (%${percentage.toFixed(1)})`);
-            }
-            totalSignals++;
-        }
-        
-        // Stochastic analizi - dinamik
-        if (technical.stochastic) {
-            const { k, d, signal } = technical.stochastic;
-            if (signal === 'oversold') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push(`Stochastic: Aşırı satım (%K: ${k.toFixed(1)}, %D: ${d.toFixed(1)}) - Alım`);
-            } else if (signal === 'overbought') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push(`Stochastic: Aşırı alım (%K: ${k.toFixed(1)}, %D: ${d.toFixed(1)}) - Satış`);
-            } else {
-                confidence += 0.02; // Nötr bölge için çok küçük bonus
-                technicalSignals.push(`Stochastic: Nötr (%K: ${k.toFixed(1)}, %D: ${d.toFixed(1)})`);
-            }
-            totalSignals++;
-        }
-        
-        // VWAP analizi - dinamik
-        if (technical.vwap) {
-            const { position, difference } = technical.vwap;
-            if (position === 'above' && Math.abs(difference) > 3) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push(`VWAP: Güçlü üstünde (%${difference.toFixed(2)}) - Alım`);
-            } else if (position === 'below' && Math.abs(difference) > 3) {
-                confidence += 0.15;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push(`VWAP: Güçlü altında (%${difference.toFixed(2)}) - Satış`);
-            } else if (position === 'above') {
-                confidence += 0.1;
-                positiveSignals++;
-                technicalSignals.push(`VWAP: Üstünde (%${difference.toFixed(2)})`);
-            } else if (position === 'below') {
-                confidence += 0.1;
-                negativeSignals++;
-                technicalSignals.push(`VWAP: Altında (%${difference.toFixed(2)})`);
-            } else {
-                confidence += 0.02; // Nötr bölge için çok küçük bonus
-                technicalSignals.push(`VWAP: Seviyesinde (%${difference.toFixed(2)})`);
-            }
-            totalSignals++;
-        }
-        
-        // CCI analizi - dinamik
-        if (technical.cci) {
-            const { value, signal } = technical.cci;
-            if (signal === 'oversold') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'buy';
-                positiveSignals++;
-                technicalSignals.push(`CCI: Aşırı satım (${value.toFixed(1)}) - Alım`);
-            } else if (signal === 'overbought') {
-                confidence += 0.2;
-                if (signal.type === 'hold') signal.type = 'sell';
-                negativeSignals++;
-                technicalSignals.push(`CCI: Aşırı alım (${value.toFixed(1)}) - Satış`);
-            } else {
-                confidence += 0.02; // Nötr bölge için çok küçük bonus
-                technicalSignals.push(`CCI: Nötr (${value.toFixed(1)})`);
-            }
-            totalSignals++;
-        }
-    }
-    
-    // Hacim analizi - geliştirilmiş
-    if (volumeToMarketCap > 0.2) {
-        confidence += 0.15;
-        technicalSignals.push('Çok yüksek hacim - Güçlü sinyal');
-    } else if (volumeToMarketCap > 0.1) {
-        confidence += 0.1;
-        technicalSignals.push('Yüksek hacim');
-    } else if (volumeToMarketCap < 0.005) {
-        confidence -= 0.15;
-        technicalSignals.push('Çok düşük hacim - Zayıf sinyal');
-    } else if (volumeToMarketCap < 0.01) {
-        confidence -= 0.1;
-        technicalSignals.push('Düşük hacim');
-    } else {
-        confidence += 0.02; // Normal hacim için küçük bonus
-        technicalSignals.push('Normal hacim');
-    }
-    
-    // Yeni güven skoru hesaplaması - puan sistemi
-    let finalConfidence = 0;
-    
-    // Hangi yönde daha güçlü sinyal var?
-    if (buyPoints > sellPoints) {
-        signal.type = 'buy';
-        signal.reason = 'Alım Sinyali';
-        finalConfidence = (buyPoints / maxPossiblePoints) * 100;
-    } else if (sellPoints > buyPoints) {
-        signal.type = 'sell';
-        signal.reason = 'Satış Sinyali';
-        finalConfidence = (sellPoints / maxPossiblePoints) * 100;
-    } else {
-        signal.type = 'hold';
-        signal.reason = 'Nötr';
-        finalConfidence = 50; // Orta seviye
-    }
-    
-    // Sinyal açıklamasını oluştur
-    signal.description = technicalSignals.join(', ');
-    
-    // Güven skorunu sınırla (20-100 arası)
-    finalConfidence = Math.max(20, Math.min(100, finalConfidence));
-    
-    // Debug için güven skoru hesaplamasını göster
-    console.log(`${coin.name} - Güven Skoru: ${Math.round(finalConfidence)}% - ${signal.type} - ${signal.reason} - Alım: ${buyPoints}, Satış: ${sellPoints}, Maksimum: ${maxPossiblePoints}`);
-    
-    // Güven skorunu yüzde olarak da hesapla (0-100 arası)
-    signal.confidencePercent = Math.round(finalConfidence);
-    signal.confidence = finalConfidence / 100; // 0-1 arası değer
-    
-    return signal;
-}
-
-// Render signals
-function renderSignals(signals) {
-    signalsContainer.innerHTML = '';
-    
-    signals.forEach(({ coin, signal }) => {
-        const signalCard = document.createElement('div');
-        signalCard.className = `signal-card ${signal.type}`;
-        
-        signalCard.innerHTML = `
-            <div class="signal-header">
-                <span class="signal-type ${signal.type}">${signal.type === 'buy' ? 'AL' : signal.type === 'sell' ? 'SAT' : 'BEKLE'}</span>
-                <span class="signal-coin">${coin.name}</span>
-            </div>
-            <div class="signal-reason">${signal.reason}</div>
-                            <div class="signal-price">₺${formatPrice(coin.current_price)}</div>
-            <div style="margin-top: 10px; font-size: 0.9rem; color: rgba(255,255,255,0.7);">
-                ${signal.description}
-            </div>
-            <div style="margin-top: 8px; font-size: 0.8rem; color: #ffd700;">
-                Güven: ${signal.confidencePercent}%
-            </div>
-        `;
-        
-        signalCard.addEventListener('click', () => showCoinDetail(coin));
-        signalsContainer.appendChild(signalCard);
-    });
-}
-
-// Technical Analysis Functions
-function calculateMA(prices, period, currentPrice) {
+// === Teknik Hesaplamalar ===
+function calculateMA(prices, period) {
     if (prices.length < period) return null;
-    
-    // Mevcut fiyata göre MA simülasyonu
-    // Gerçek MA hesaplaması yerine mevcut fiyata yakın değerler üret
-    const priceChange24h = currentPrice * 0.1; // %10 değişim varsayımı
-    
-    if (period === 7) {
-        // MA7: Mevcut fiyatın biraz altında
-        return currentPrice * 0.97;
-    } else if (period === 14) {
-        // MA14: Mevcut fiyatın biraz daha altında
-        return currentPrice * 0.95;
-    } else if (period === 30) {
-        // MA30: Mevcut fiyatın daha da altında
-        return currentPrice * 0.92;
-    }
-    
-    return currentPrice;
+    const slice = prices.slice(-period);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
 }
 
 function calculateEMA(prices, period) {
-    if (prices.length < period) return null;
-    
-    const multiplier = 2 / (period + 1);
+    const k = 2 / (period + 1);
     let ema = prices[0];
-    
-    for (let i = 1; i < prices.length; i++) {
-        ema = (prices[i] * multiplier) + (ema * (1 - multiplier));
-    }
-    
+    for (let i = 1; i < prices.length; i++) ema = prices[i] * k + ema * (1 - k);
     return ema;
 }
 
-function calculateRSI(prices, period = 14, currentPrice) {
+function calculateRSI(prices, period = 14) {
     if (prices.length < period + 1) return null;
-    
-    // Basit RSI simülasyonu - mevcut fiyata göre
-    // Gerçek RSI hesaplaması yerine makul bir değer üret
-    const randomFactor = Math.random() * 0.4 + 0.3; // 30-70 arası
-    return Math.round(randomFactor * 100);
+    let gains = 0, losses = 0;
+    for (let i = 1; i <= period; i++) {
+        const diff = prices[i] - prices[i - 1];
+        if (diff >= 0) gains += diff; else losses -= diff;
+    }
+    const avgGain = gains / period, avgLoss = losses / period;
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
 }
 
-function calculateMACD(prices, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9, currentPrice) {
-    if (prices.length < slowPeriod) return null;
-    
-    // Basit MACD simülasyonu - mevcut fiyata göre
-    // Gerçek MACD hesaplaması yerine makul değerler üret
-    const baseValue = currentPrice * 0.001; // Mevcut fiyatın %0.1'i kadar
-    
-    return {
-        macd: baseValue * (Math.random() * 2 - 1), // Pozitif veya negatif
-        signal: baseValue * (Math.random() * 2 - 1),
-        histogram: baseValue * (Math.random() * 2 - 1)
-    };
+function calculateMACD(prices) {
+    const ema12 = calculateEMA(prices, 12);
+    const ema26 = calculateEMA(prices, 26);
+    const macdLine = ema12 - ema26;
+    const signalLine = calculateEMA(prices.slice(-9), 9);
+    return { macdLine, signalLine, histogram: macdLine - signalLine };
 }
 
-function findSupportResistance(prices, currentPrice) {
-    if (prices.length < 20) return { support: null, resistance: null };
-    
-    const recentPrices = prices.slice(-20);
-    const min = Math.min(...recentPrices);
-    const max = Math.max(...recentPrices);
-    
-    // Mevcut fiyatı kullan
-    const current = currentPrice;
-    
-    // Basit destek/direnç hesaplama - mevcut fiyata göre
-    const support = current * 0.95; // %5 altında destek
-    const resistance = current * 1.05; // %5 üstünde direnç
-    
-    return {
-        support: support,
-        resistance: resistance,
-        current: current,
-        distanceToSupport: ((current - support) / current) * 100,
-        distanceToResistance: ((resistance - current) / current) * 100
-    };
-}
-
-function calculateBollingerBands(prices, period = 20, multiplier = 2, currentPrice) {
+function calculateBollingerBands(prices, period = 20, mult = 2) {
     if (prices.length < period) return null;
-    
-    // Mevcut fiyata göre Bollinger Bands simülasyonu
-    const middleBand = currentPrice; // Orta bant (SMA)
-    const volatility = currentPrice * 0.05; // %5 volatilite
-    
-    const upperBand = middleBand + (volatility * multiplier);
-    const lowerBand = middleBand - (volatility * multiplier);
-    
-    // Fiyatın hangi bantta olduğunu belirle
-    let position = 'middle';
-    if (currentPrice > upperBand) {
-        position = 'upper';
-    } else if (currentPrice < lowerBand) {
-        position = 'lower';
-    }
-    
-    // Bandwidth (bant genişliği) hesapla
-    const bandwidth = ((upperBand - lowerBand) / middleBand) * 100;
-    
-    return {
-        upper: upperBand,
-        middle: middleBand,
-        lower: lowerBand,
-        position: position,
-        bandwidth: bandwidth
-    };
+    const sma = calculateMA(prices, period);
+    const slice = prices.slice(-period);
+    const variance = slice.reduce((acc, p) => acc + Math.pow(p - sma, 2), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    const upper = sma + mult * stdDev, lower = sma - mult * stdDev;
+    const pos = prices[prices.length - 1] >= upper ? 'upper' : (prices[prices.length - 1] <= lower ? 'lower' : 'middle');
+    return { upper, lower, middle: sma, position: pos };
 }
 
-function calculateWilliamsR(prices, period = 14, currentPrice) {
+function calculateVWAP(prices) {
+    return prices.reduce((a, b) => a + b, 0) / prices.length;
+}
+
+function findSupportResistance(prices) {
+    return { support: Math.min(...prices), resistance: Math.max(...prices) };
+}
+
+function calculateATR(prices, period = 14) {
     if (prices.length < period) return null;
-    
-    // Williams %R hesaplama - mevcut fiyata göre simülasyon
-    // Normal değer aralığı: -100 ile 0 arası
-    
-    // Basit simülasyon: mevcut fiyata göre rastgele değer
-    const baseValue = -50; // Orta değer
-    const variation = (Math.random() - 0.5) * 60; // -30 ile +30 arası
-    const williamsR = baseValue + variation;
-    
-    // Değeri -100 ile 0 arasında sınırla
-    const clampedValue = Math.max(-100, Math.min(0, williamsR));
-    
-    // Sinyal belirleme
-    let signal = 'neutral';
-    if (clampedValue < -80) {
-        signal = 'oversold'; // Aşırı satım
-    } else if (clampedValue > -20) {
-        signal = 'overbought'; // Aşırı alım
-    }
-    
-    return {
-        value: clampedValue,
-        signal: signal
-    };
+    let trs = [];
+    for (let i = 1; i < prices.length; i++) trs.push(Math.abs(prices[i] - prices[i - 1]));
+    return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-function calculateOBV(prices, volumes, currentPrice) {
-    if (prices.length < 2) return null;
-    
-    // OBV simülasyonu - gerçek hacim verisi olmadığı için
-    // Mevcut fiyata göre trend analizi yapalım
-    
-    const recentPrices = prices.slice(-10); // Son 10 fiyat
-    const priceChange = recentPrices[recentPrices.length - 1] - recentPrices[0];
-    
-    // Trend analizi
-    let trend = 'neutral';
-    let strength = 0;
-    
-    if (priceChange > 0) {
-        trend = 'bullish'; // Yükseliş trendi
-        strength = Math.abs(priceChange) / recentPrices[0] * 100; // Yüzde değişim
-    } else if (priceChange < 0) {
-        trend = 'bearish'; // Düşüş trendi
-        strength = Math.abs(priceChange) / recentPrices[0] * 100;
-    }
-    
-    return {
-        trend: trend,
-        strength: strength,
-        priceChange: priceChange
-    };
-}
-
-// ATR (Average True Range) - Volatilite göstergesi
-function calculateATR(prices, period = 14, currentPrice) {
+function calculateStochastic(prices, period = 14) {
     if (prices.length < period) return null;
-    
-    // True Range hesaplama simülasyonu - TRY cinsinden
-    // Mevcut fiyata göre volatilite hesaplama
-    
-    const volatility = currentPrice * 0.03; // %3 volatilite varsayımı
-    const atr = volatility * (0.8 + Math.random() * 0.4); // 0.8-1.2 arası çarpan
-    
-    // Volatilite seviyesi belirleme
-    let level = 'normal';
-    if (atr > currentPrice * 0.05) {
-        level = 'high'; // Yüksek volatilite
-    } else if (atr < currentPrice * 0.01) {
-        level = 'low'; // Düşük volatilite
-    }
-    
-    return {
-        value: atr,
-        level: level,
-        percentage: (atr / currentPrice) * 100
-    };
+    const slice = prices.slice(-period);
+    const high = Math.max(...slice);
+    const low = Math.min(...slice);
+    const current = prices[prices.length - 1];
+    const k = ((current - low) / (high - low)) * 100;
+    const d = k;
+    return { k, d };
 }
 
-// Stochastic Oscillator - Momentum göstergesi
-function calculateStochastic(prices, period = 14, currentPrice) {
+// === Yeni Teknik Göstergeler ===
+function calculateWilliamsR(prices, period = 14) {
     if (prices.length < period) return null;
-    
-    // Stochastic hesaplama simülasyonu - daha gerçekçi değerler
-    const baseValue = 50; // Orta değer
-    const variation = (Math.random() - 0.5) * 60; // -30 ile +30 arası
-    const kPercent = Math.max(0, Math.min(100, baseValue + variation));
-    
-    // %D hesaplama (3 periyotluk %K ortalaması)
-    const dVariation = (Math.random() - 0.5) * 20; // -10 ile +10 arası
-    const dPercent = Math.max(0, Math.min(100, kPercent + dVariation));
-    
-    // Sinyal belirleme
-    let signal = 'neutral';
-    if (kPercent > 80 && dPercent > 80) {
-        signal = 'overbought'; // Aşırı alım
-    } else if (kPercent < 20 && dPercent < 20) {
-        signal = 'oversold'; // Aşırı satım
-    }
-    
-    return {
-        k: kPercent,
-        d: dPercent,
-        signal: signal
-    };
+    const slice = prices.slice(-period);
+    const high = Math.max(...slice);
+    const low = Math.min(...slice);
+    const current = prices[prices.length - 1];
+    return ((high - current) / (high - low)) * -100;
 }
 
-// VWAP (Volume Weighted Average Price) - Ağırlıklı ortalama
-function calculateVWAP(prices, volumes, currentPrice) {
-    if (prices.length < 2) return null;
-    
-    // VWAP simülasyonu - mevcut fiyata göre hesaplama (TRY cinsinden)
-    // Sparkline verisi USD olduğu için mevcut fiyatı kullanıyoruz
-    const vwap = currentPrice * (0.98 + Math.random() * 0.04); // %2-6 arası fark
-    
-    // Mevcut fiyatın VWAP'a göre pozisyonu
-    let position = 'neutral';
-    const difference = ((currentPrice - vwap) / vwap) * 100;
-    
-    if (difference > 2) {
-        position = 'above'; // VWAP'ın üstünde
-    } else if (difference < -2) {
-        position = 'below'; // VWAP'ın altında
-    }
-    
-    return {
-        value: vwap,
-        position: position,
-        difference: difference
-    };
-}
-
-// CCI (Commodity Channel Index) - Trend göstergesi
-function calculateCCI(prices, period = 20, currentPrice) {
+function calculateCCI(prices, period = 20) {
     if (prices.length < period) return null;
-    
-    // CCI hesaplama simülasyonu - daha gerçekçi değerler
-    const baseValue = 0; // Orta değer
-    const variation = (Math.random() - 0.5) * 200; // -100 ile +100 arası
-    const cci = Math.max(-300, Math.min(300, baseValue + variation));
-    
-    // Sinyal belirleme
-    let signal = 'neutral';
-    if (cci > 100) {
-        signal = 'overbought'; // Aşırı alım
-    } else if (cci < -100) {
-        signal = 'oversold'; // Aşırı satım
-    }
-    
-    return {
-        value: cci,
-        signal: signal
-    };
+    const slice = prices.slice(-period);
+    const sma = slice.reduce((a, b) => a + b, 0) / period;
+    const meanDeviation = slice.reduce((acc, price) => acc + Math.abs(price - sma), 0) / period;
+    const current = prices[prices.length - 1];
+    return (current - sma) / (0.015 * meanDeviation);
 }
 
-function getTechnicalAnalysis(coin) {
-    if (!coin.sparkline_in_7d || !coin.sparkline_in_7d.price) {
-        return null;
+function calculateOBV(prices, volumes) {
+    if (!volumes || volumes.length !== prices.length) return null;
+    let obv = 0;
+    for (let i = 1; i < prices.length; i++) {
+        if (prices[i] > prices[i - 1]) {
+            obv += volumes[i];
+        } else if (prices[i] < prices[i - 1]) {
+            obv -= volumes[i];
+        }
+    }
+    return obv;
+}
+
+function calculateStochasticRSI(prices, period = 14) {
+    const rsi = calculateRSI(prices, period);
+    if (rsi === null) return null;
+    
+    // RSI değerlerini hesapla
+    let rsiValues = [];
+    for (let i = period; i < prices.length; i++) {
+        const slice = prices.slice(i - period, i + 1);
+        const rsiVal = calculateRSI(slice, period);
+        if (rsiVal !== null) rsiValues.push(rsiVal);
     }
     
+    if (rsiValues.length < period) return null;
+    
+    const rsiSlice = rsiValues.slice(-period);
+    const high = Math.max(...rsiSlice);
+    const low = Math.min(...rsiSlice);
+    const current = rsiValues[rsiValues.length - 1];
+    
+    return ((current - low) / (high - low)) * 100;
+}
+
+function calculateMoneyFlowIndex(prices, volumes, period = 14) {
+    if (!volumes || volumes.length !== prices.length || prices.length < period + 1) return null;
+    
+    let positiveFlow = 0, negativeFlow = 0;
+    
+    for (let i = 1; i <= period; i++) {
+        const typicalPrice = prices[i];
+        const prevTypicalPrice = prices[i - 1];
+        const volume = volumes[i] || 0;
+        
+        if (typicalPrice > prevTypicalPrice) {
+            positiveFlow += typicalPrice * volume;
+        } else if (typicalPrice < prevTypicalPrice) {
+            negativeFlow += typicalPrice * volume;
+        }
+    }
+    
+    if (negativeFlow === 0) return 100;
+    
+    const moneyRatio = positiveFlow / negativeFlow;
+    return 100 - (100 / (1 + moneyRatio));
+}
+
+// === Gelişmiş Sinyal Sistemi ===
+function generateSignalForCoin(coin) {
+    if (!coin.sparkline_in_7d || !coin.sparkline_in_7d.price) return { type: 'hold', confidencePercent: 0 };
+
     const prices = coin.sparkline_in_7d.price;
     const currentPrice = coin.current_price;
     
-    // MA hesaplamaları - mevcut fiyata göre
-    const ma7 = calculateMA(prices, 7, currentPrice);
-    const ma14 = calculateMA(prices, 14, currentPrice);
-    const ma30 = calculateMA(prices, 30, currentPrice);
-    
-    // RSI hesaplama - mevcut fiyata göre
-    const rsi = calculateRSI(prices, 14, currentPrice);
-    
-    // MACD hesaplama - mevcut fiyata göre
-    const macd = calculateMACD(prices, 12, 26, 9, currentPrice);
-    
-    // Destek/Direnç hesaplama - TRY cinsinden, mevcut fiyata göre
-    const supportResistance = findSupportResistance(prices, currentPrice);
-    
-    // Bollinger Bands hesaplama
-    const bollingerBands = calculateBollingerBands(prices, 20, 2, currentPrice);
-    
-    // Williams %R hesaplama
-    const williamsR = calculateWilliamsR(prices, 14, currentPrice);
-    
-    // OBV hesaplama (hacim verisi olmadığı için fiyat trendi kullanıyoruz)
-    const obv = calculateOBV(prices, [], currentPrice);
-    console.log('OBV Hesaplama:', obv); // Debug için
-    
-    // Yeni göstergeleri hesapla
-    const atr = calculateATR(prices, 14, currentPrice);
-    const stochastic = calculateStochastic(prices, 14, currentPrice);
-    const vwap = calculateVWAP(prices, null, currentPrice);
-    const cci = calculateCCI(prices, 20, currentPrice);
-    
+    // Simüle edilmiş hacim verileri (CoinGecko'da yok)
+    const volumes = prices.map(() => Math.random() * 1000000 + 100000);
+
+    // Temel göstergeler
+    const rsi = calculateRSI(prices);
+    const ma7 = calculateMA(prices, 7);
+    const ma14 = calculateMA(prices, 14);
+    const ma30 = calculateMA(prices, 30);
+    const macd = calculateMACD(prices);
+    const bb = calculateBollingerBands(prices);
+    const vwap = calculateVWAP(prices);
+    const sr = findSupportResistance(prices);
+    const atr = calculateATR(prices);
+    const stoch = calculateStochastic(prices);
+
+    // Yeni göstergeler
+    const williamsR = calculateWilliamsR(prices);
+    const cci = calculateCCI(prices);
+    const obv = calculateOBV(prices, volumes);
+    const stochRSI = calculateStochasticRSI(prices);
+    const mfi = calculateMoneyFlowIndex(prices, volumes);
+
+    let buyPoints = 0, sellPoints = 0, maxPossiblePoints = 0;
+
+    // === RSI Analizi (0-20 puan) ===
+    maxPossiblePoints += 20;
+    if (rsi !== null) {
+        if (rsi < 30) {
+            buyPoints += 20;
+        } else if (rsi > 70) {
+            sellPoints += 20;
+        } else if (rsi < 45) {
+            buyPoints += 10;
+        } else if (rsi > 55) {
+            sellPoints += 10;
+        }
+    }
+
+    // === MA Trend Analizi (0-15 puan) ===
+    maxPossiblePoints += 15;
+    if (currentPrice > ma7 && ma7 > ma14 && ma14 > ma30) {
+        buyPoints += 15;
+    } else if (currentPrice < ma7 && ma7 < ma14 && ma14 < ma30) {
+        sellPoints += 15;
+    } else if (currentPrice > ma7 && ma7 > ma14) {
+        buyPoints += 10;
+    } else if (currentPrice < ma7 && ma7 < ma14) {
+        sellPoints += 10;
+    }
+
+    // === MACD Analizi (0-15 puan) ===
+    maxPossiblePoints += 15;
+    if (macd.histogram > 0 && macd.macdLine > macd.signalLine) {
+        buyPoints += 15;
+    } else if (macd.histogram < 0 && macd.macdLine < macd.signalLine) {
+        sellPoints += 15;
+    } else if (macd.histogram > 0) {
+        buyPoints += 8;
+    } else {
+        sellPoints += 8;
+    }
+
+    // === Bollinger Bands Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (bb && bb.position === 'lower') {
+        buyPoints += 10;
+    } else if (bb && bb.position === 'upper') {
+        sellPoints += 10;
+    }
+
+    // === Williams %R Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (williamsR !== null) {
+        if (williamsR < -80) {
+            buyPoints += 10;
+        } else if (williamsR > -20) {
+            sellPoints += 10;
+        } else if (williamsR < -60) {
+            buyPoints += 5;
+        } else if (williamsR > -40) {
+            sellPoints += 5;
+        }
+    }
+
+    // === CCI Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (cci !== null) {
+        if (cci < -100) {
+            buyPoints += 10;
+        } else if (cci > 100) {
+            sellPoints += 10;
+        } else if (cci < -50) {
+            buyPoints += 5;
+        } else if (cci > 50) {
+            sellPoints += 5;
+        }
+    }
+
+    // === Stochastic Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (stoch && stoch.k < 20 && stoch.d < 20) {
+        buyPoints += 10;
+    } else if (stoch && stoch.k > 80 && stoch.d > 80) {
+        sellPoints += 10;
+    } else if (stoch && stoch.k < 30 && stoch.d < 30) {
+        buyPoints += 5;
+    } else if (stoch && stoch.k > 70 && stoch.d > 70) {
+        sellPoints += 5;
+    }
+
+    // === Stochastic RSI Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (stochRSI !== null) {
+        if (stochRSI < 20) {
+            buyPoints += 10;
+        } else if (stochRSI > 80) {
+            sellPoints += 10;
+        } else if (stochRSI < 30) {
+            buyPoints += 5;
+        } else if (stochRSI > 70) {
+            sellPoints += 5;
+        }
+    }
+
+    // === Money Flow Index Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (mfi !== null) {
+        if (mfi < 20) {
+            buyPoints += 10;
+        } else if (mfi > 80) {
+            sellPoints += 10;
+        } else if (mfi < 30) {
+            buyPoints += 5;
+        } else if (mfi > 70) {
+            sellPoints += 5;
+        }
+    }
+
+    // === Destek/Direnç Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    const distSupport = ((currentPrice - sr.support) / sr.support) * 100;
+    const distResistance = ((sr.resistance - currentPrice) / currentPrice) * 100;
+    if (distSupport < 3) {
+        buyPoints += 10;
+    } else if (distResistance < 3) {
+        sellPoints += 10;
+    } else if (distSupport < 8) {
+        buyPoints += 5;
+    } else if (distResistance < 8) {
+        sellPoints += 5;
+    }
+
+    // === Volatilite Analizi (0-10 puan) ===
+    maxPossiblePoints += 10;
+    if (atr && atr < currentPrice * 0.015) {
+        buyPoints += 10;
+    } else if (atr && atr > currentPrice * 0.05) {
+        sellPoints += 5;
+    }
+
+    // === Sinyal Belirleme ===
+    const type = buyPoints > sellPoints ? 'buy' : sellPoints > buyPoints ? 'sell' : 'hold';
+    const maxPoints = Math.max(buyPoints, sellPoints);
+    const confidencePercent = Math.min(100, Math.round((maxPoints / maxPossiblePoints) * 100));
+
+    // === Detaylı Açıklama ===
+    const indicators = [];
+    if (rsi !== null) indicators.push(`RSI:${rsi.toFixed(1)}`);
+    if (williamsR !== null) indicators.push(`W%R:${williamsR.toFixed(1)}`);
+    if (cci !== null) indicators.push(`CCI:${cci.toFixed(1)}`);
+    if (stochRSI !== null) indicators.push(`StochRSI:${stochRSI.toFixed(1)}`);
+    if (mfi !== null) indicators.push(`MFI:${mfi.toFixed(1)}`);
+
     return {
-        ma7: ma7,
-        ma14: ma14,
-        ma30: ma30,
-        rsi: rsi,
-        macd: macd,
-        supportResistance: supportResistance,
-        bollingerBands: bollingerBands,
-        williamsR: williamsR,
-        obv: obv,
-        atr: atr,
-        stochastic: stochastic,
-        vwap: vwap,
-        cci: cci,
-        currentPrice: currentPrice
+        type,
+        confidencePercent,
+        confidence: confidencePercent / 100,
+        reason: type === 'buy' ? 'Alım Sinyali' : type === 'sell' ? 'Satış Sinyali' : 'Bekle',
+        description: indicators.join(', '),
+        buyPoints,
+        sellPoints,
+        maxPossiblePoints
     };
 }
 
-// Utility functions
-function formatPrice(price) {
-    if (price < 1) {
-        return price.toFixed(4);
-    } else if (price < 10) {
-        return price.toFixed(3);
-    } else if (price < 100) {
-        return price.toFixed(2);
-    } else if (price < 1000) {
-        return price.toFixed(1);
-    } else {
-        return price.toFixed(0);
-    }
-}
+// === TradingView Modal ===
+function showCoinDetail(coin) {
+    const signal = generateSignalForCoin(coin);
+    const prices = coin.sparkline_in_7d.price;
+    const currentPrice = coin.current_price;
+    const volumes = prices.map(() => Math.random() * 1000000 + 100000);
+    
+    // Tüm göstergeleri hesapla
+    const rsi = calculateRSI(prices);
+    const williamsR = calculateWilliamsR(prices);
+    const cci = calculateCCI(prices);
+    const stochRSI = calculateStochasticRSI(prices);
+    const mfi = calculateMoneyFlowIndex(prices, volumes);
+    const ma7 = calculateMA(prices, 7);
+    const ma14 = calculateMA(prices, 14);
+    const ma30 = calculateMA(prices, 30);
+    const macd = calculateMACD(prices);
+    const bb = calculateBollingerBands(prices);
+    const stoch = calculateStochastic(prices);
+    const atr = calculateATR(prices);
+    const vwap = calculateVWAP(prices);
+    const sr = findSupportResistance(prices);
 
-function formatMarketCap(marketCap) {
-    if (marketCap >= 1e12) {
-        return '₺' + (marketCap / 1e12).toFixed(2) + 'T';
-    } else if (marketCap >= 1e9) {
-        return '₺' + (marketCap / 1e9).toFixed(2) + 'B';
-    } else if (marketCap >= 1e6) {
-        return '₺' + (marketCap / 1e6).toFixed(2) + 'M';
-    } else {
-        return '₺' + marketCap.toLocaleString('tr-TR');
-    }
-}
+    coinDetail.innerHTML = `
+        <div style="text-align:center;margin-bottom:15px;">
+            <img src="${coin.image}" alt="${coin.name}" style="width:60px;height:60px;border-radius:50%;margin-bottom:8px;">
+            <h2>${coin.name} (${coin.symbol.toUpperCase()})</h2>
+            <p style="font-size:1.3rem;color:#ffd700;">$${formatPrice(coin.current_price)}</p>
+        </div>
+        
+        <div style="margin-bottom:20px;background:rgba(255,255,255,0.05);padding:15px;border-radius:10px;">
+            <h3 style="margin-top:0;color:#ffd700;">📊 Sinyal Analizi</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;font-size:0.9rem;">
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Güven Skoru:</b> <span style="color:${signal.confidencePercent >= 70 ? '#00ff00' : signal.confidencePercent >= 50 ? '#ffff00' : '#ff6b6b'}">${signal.confidencePercent}%</span></div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${signal.confidencePercent >= 70 ? 'Çok güçlü sinyal - Yüksek güven' : signal.confidencePercent >= 50 ? 'Orta güçlü sinyal - Dikkatli ol' : 'Zayıf sinyal - Riskli'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Sinyal:</b> <span style="color:${signal.type === 'buy' ? '#00ff00' : signal.type === 'sell' ? '#ff6b6b' : '#ffff00'}">${signal.reason}</span></div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${signal.type === 'buy' ? 'Alım yapılabilir - Fiyat yükseliş beklenir' : signal.type === 'sell' ? 'Satış yapılabilir - Fiyat düşüş beklenir' : 'Bekle - Net sinyal yok'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Alım Puanı:</b> ${signal.buyPoints}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${signal.buyPoints > signal.sellPoints ? 'Alım sinyalleri baskın - Pozitif' : 'Alım sinyalleri zayıf - Negatif'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Satım Puanı:</b> ${signal.sellPoints}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${signal.sellPoints > signal.buyPoints ? 'Satım sinyalleri baskın - Negatif' : 'Satım sinyalleri zayıf - Pozitif'}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-function formatVolume(volume) {
-    if (volume >= 1e12) {
-        return '₺' + (volume / 1e12).toFixed(2) + 'T';
-    } else if (volume >= 1e9) {
-        return '₺' + (volume / 1e9).toFixed(2) + 'B';
-    } else if (volume >= 1e6) {
-        return '₺' + (volume / 1e6).toFixed(2) + 'M';
-    } else {
-        return '₺' + volume.toLocaleString('tr-TR');
-    }
-}
+        <div style="margin-bottom:20px;background:rgba(255,255,255,0.05);padding:15px;border-radius:10px;">
+            <h3 style="margin-top:0;color:#ffd700;">📈 Teknik Göstergeler</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;font-size:0.9rem;">
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>RSI:</b> ${rsi ? rsi.toFixed(1) : 'N/A'} ${rsi < 30 ? '🟢' : rsi > 70 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${rsi < 30 ? 'Aşırı satım - Alım fırsatı' : rsi > 70 ? 'Aşırı alım - Satış fırsatı' : 'Nötr bölge - Bekle'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Williams %R:</b> ${williamsR ? williamsR.toFixed(1) : 'N/A'} ${williamsR < -80 ? '🟢' : williamsR > -20 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${williamsR < -80 ? 'Aşırı satım - Güçlü alım' : williamsR > -20 ? 'Aşırı alım - Satış sinyali' : 'Nötr - Trend devam'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>CCI:</b> ${cci ? cci.toFixed(1) : 'N/A'} ${cci < -100 ? '🟢' : cci > 100 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${cci < -100 ? 'Aşırı satım - Trend dönüşü' : cci > 100 ? 'Aşırı alım - Düzeltme beklenir' : 'Normal seviye - Trend devam'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Stoch RSI:</b> ${stochRSI ? stochRSI.toFixed(1) : 'N/A'} ${stochRSI < 20 ? '🟢' : stochRSI > 80 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${stochRSI < 20 ? 'Momentum düşük - Alım zamanı' : stochRSI > 80 ? 'Momentum yüksek - Satış zamanı' : 'Orta momentum - Bekle'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>MFI:</b> ${mfi ? mfi.toFixed(1) : 'N/A'} ${mfi < 20 ? '🟢' : mfi > 80 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${mfi < 20 ? 'Para akışı düşük - Alım fırsatı' : mfi > 80 ? 'Para akışı yüksek - Satış fırsatı' : 'Normal para akışı - İzle'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Stochastic K:</b> ${stoch ? stoch.k.toFixed(1) : 'N/A'} ${stoch && stoch.k < 20 ? '🟢' : stoch && stoch.k > 80 ? '🔴' : '🟡'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${stoch && stoch.k < 20 ? 'Fiyat düşük - Alım sinyali' : stoch && stoch.k > 80 ? 'Fiyat yüksek - Satış sinyali' : 'Orta seviye - Trend devam'}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-function formatCurrency(amount) {
-    if (amount >= 1e12) {
-        return '₺' + (amount / 1e12).toFixed(2) + 'T';
-    } else if (amount >= 1e9) {
-        return '₺' + (amount / 1e9).toFixed(2) + 'B';
-    } else if (amount >= 1e6) {
-        return '₺' + (amount / 1e6).toFixed(2) + 'M';
-    } else {
-        return '₺' + amount.toLocaleString('tr-TR');
-    }
-}
+        <div style="margin-bottom:20px;background:rgba(255,255,255,0.05);padding:15px;border-radius:10px;">
+            <h3 style="margin-top:0;color:#ffd700;">📊 Hareketli Ortalamalar</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;font-size:0.9rem;">
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>MA7:</b> $${ma7 ? ma7.toFixed(4) : 'N/A'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${currentPrice > ma7 ? 'Fiyat MA7 üstünde - Yükseliş trendi' : 'Fiyat MA7 altında - Düşüş trendi'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>MA14:</b> $${ma14 ? ma14.toFixed(4) : 'N/A'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${currentPrice > ma14 ? 'Fiyat MA14 üstünde - Orta vadeli yükseliş' : 'Fiyat MA14 altında - Orta vadeli düşüş'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>MA30:</b> $${ma30 ? ma30.toFixed(4) : 'N/A'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${currentPrice > ma30 ? 'Fiyat MA30 üstünde - Uzun vadeli yükseliş' : 'Fiyat MA30 altında - Uzun vadeli düşüş'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>VWAP:</b> $${vwap.toFixed(4)}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${currentPrice > vwap ? 'Fiyat VWAP üstünde - Güçlü alım baskısı' : 'Fiyat VWAP altında - Satış baskısı'}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-function formatNumber(num) {
-    if (num >= 1e9) {
-        return (num / 1e9).toFixed(2) + 'B';
-    } else if (num >= 1e6) {
-        return (num / 1e6).toFixed(2) + 'M';
-    } else if (num >= 1e3) {
-        return (num / 1e3).toFixed(2) + 'K';
-    } else {
-        return num.toLocaleString();
-    }
-}
+        <div style="margin-bottom:20px;background:rgba(255,255,255,0.05);padding:15px;border-radius:10px;">
+            <h3 style="margin-top:0;color:#ffd700;">🎯 Destek & Direnç</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;font-size:0.9rem;">
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Destek:</b> $${sr.support.toFixed(4)}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${((currentPrice - sr.support) / sr.support * 100) < 5 ? 'Fiyat desteğe yakın - Alım fırsatı' : 'Destek seviyesi uzak - Güvenli'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>Direnç:</b> $${sr.resistance.toFixed(4)}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${((sr.resistance - currentPrice) / currentPrice * 100) < 5 ? 'Fiyat dirence yakın - Satış fırsatı' : 'Direnç seviyesi uzak - Yükseliş devam'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>ATR (Volatilite):</b> $${atr ? atr.toFixed(4) : 'N/A'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${atr && atr < currentPrice * 0.02 ? 'Düşük volatilite - Stabil trend' : atr && atr > currentPrice * 0.05 ? 'Yüksek volatilite - Dikkatli ol' : 'Normal volatilite - Standart risk'}
+                    </div>
+                </div>
+                
+                <div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;">
+                    <div><b>BB Pozisyon:</b> ${bb ? bb.position : 'N/A'}</div>
+                    <div style="font-size:0.8rem;color:#ccc;margin-top:3px;">
+                        ${bb && bb.position === 'lower' ? 'Alt banda yakın - Alım fırsatı' : bb && bb.position === 'upper' ? 'Üst banda yakın - Satış fırsatı' : 'Orta banda - Nötr durum'}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-function showLoading() {
-    loading.style.display = 'flex';
-}
-
-function hideLoading() {
-    loading.style.display = 'none';
-}
-
-function showError(message) {
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #ff4444;
-        color: white;
-        padding: 15px 20px;
-        border-radius: 10px;
-        z-index: 3000;
-        max-width: 300px;
+        <div id="tradingview-widget" style="height:400px;width:100%;"></div>
     `;
-    errorDiv.textContent = message;
-    document.body.appendChild(errorDiv);
-    
-    setTimeout(() => {
-        errorDiv.remove();
-    }, 5000);
+    modal.style.display = 'block';
+    loadTradingViewChart(coin.symbol.toUpperCase());
 }
 
-// Auto-refresh data every 5 minutes
-setInterval(() => {
-    loadMarketData();
-    loadCoins();
-    generateSignals();
-}, 5 * 60 * 1000);
-
-// TradingView widget yükleme fonksiyonu
 function loadTradingViewChart(symbol) {
-    const widgetContainer = document.getElementById('tradingview-widget');
-    
-    // Önceki widget'ı temizle
-    widgetContainer.innerHTML = '';
-    
-    // TradingView widget'ını oluştur
+    const container = document.getElementById('tradingview-widget');
+    container.innerHTML = '';
     const script = document.createElement('script');
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
     script.async = true;
     script.innerHTML = JSON.stringify({
-        "autosize": true,
-        "symbol": `BINANCE:${symbol}TRY`,
-        "interval": "D",
-        "timezone": "Europe/Istanbul",
-        "theme": "dark",
-        "style": "1",
-        "locale": "tr",
-        "enable_publishing": false,
-        "allow_symbol_change": false,
-        "calendar": false,
-        "support_host": "https://www.tradingview.com"
+        autosize: true,
+        symbol: `BINANCE:${symbol}USDT`,
+        interval: "D",
+        timezone: "Europe/Istanbul",
+        theme: "dark",
+        style: "1",
+        locale: "tr",
+        enable_publishing: false,
+        allow_symbol_change: false,
     });
-    
-    const container = document.createElement('div');
-    container.className = 'tradingview-widget-container';
-    container.innerHTML = '<div class="tradingview-widget-container__widget"></div>';
-    
-    widgetContainer.appendChild(container);
     container.appendChild(script);
-} 
+}
+
+// === UI Rendering ===
+async function generateSignals() {
+    const topCoins = allCoins.slice(0, 20);
+    const signals = topCoins.map(c => ({ coin: c, signal: generateSignalForCoin(c) }))
+        .filter(s => s.signal.confidencePercent >= 50)
+        .sort((a, b) => b.signal.confidencePercent - a.signal.confidencePercent)
+        .slice(0, 6);
+    renderSignals(signals);
+}
+
+function renderSignals(signals) {
+    signalsContainer.innerHTML = '';
+    signals.forEach(({ coin, signal }) => {
+        const div = document.createElement('div');
+        div.className = `signal-card ${signal.type}`;
+        div.innerHTML = `
+            <div class="signal-header">
+                <span class="signal-type">${signal.type.toUpperCase()}</span>
+                <span class="signal-coin">${coin.name}</span>
+            </div>
+            <div class="signal-price">₺${formatPrice(coin.current_price)}</div>
+            <div class="signal-reason">${signal.reason}</div>
+            <div>Güven: ${signal.confidencePercent}%</div>
+        `;
+        div.addEventListener('click', () => showCoinDetail(coin));
+        signalsContainer.appendChild(div);
+    });
+}
+
+// === Search & Filter ===
+function handleSearch() {
+    const query = searchInput.value.toLowerCase();
+    filteredCoins = allCoins.filter(coin => 
+        coin.name.toLowerCase().includes(query) || 
+        coin.symbol.toLowerCase().includes(query)
+    );
+    renderCoins();
+}
+
+function filterCoins() {
+    if (currentFilter === 'all') {
+        filteredCoins = [...allCoins];
+    } else if (currentFilter === 'guc') {
+        filteredCoins = allCoins.filter(coin => {
+            const signal = generateSignalForCoin(coin);
+            return signal.type === 'buy' && signal.confidencePercent >= 70;
+        });
+    } else if (currentFilter === 'positive') {
+        filteredCoins = allCoins.filter(coin => coin.price_change_percentage_24h > 0);
+    } else if (currentFilter === 'negative') {
+        filteredCoins = allCoins.filter(coin => coin.price_change_percentage_24h < 0);
+    }
+    renderCoins();
+}
+
+// === Helpers ===
+function formatPrice(price) { return price < 1 ? price.toFixed(4) : price.toFixed(2); }
+function formatCurrency(val) { return '$' + (val / 1e9).toFixed(2) + 'B'; }
+function showLoading() { loading.style.display = 'flex'; }
+function hideLoading() { loading.style.display = 'none'; }
+
+// Auto-refresh
+setInterval(() => { loadMarketData(); loadCoins(); generateSignals(); }, 300000);
